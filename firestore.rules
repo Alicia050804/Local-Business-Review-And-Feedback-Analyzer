@@ -1,0 +1,217 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global safety net: deny everything by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isVerifiedUser() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidUserWorkspace(data, userId) {
+      return data.keys().hasAll(['uid', 'displayName', 'seeded', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'displayName', 'seeded', 'createdAt', 'updatedAt'])
+        && isValidId(data.uid)
+        && data.uid == userId
+        && data.uid == request.auth.uid
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100
+        && data.seeded is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidBusiness(data, businessId, userId) {
+      return data.keys().hasAll(['id', 'ownerId', 'name', 'category', 'description', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'ownerId', 'name', 'category', 'description', 'imageUrl', 'createdAt', 'updatedAt'])
+        && isValidId(data.id)
+        && data.id == businessId
+        && isValidId(data.ownerId)
+        && data.ownerId == userId
+        && data.ownerId == request.auth.uid
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && data.category is string && data.category.size() >= 1 && data.category.size() <= 80
+        && data.description is string && data.description.size() >= 1 && data.description.size() <= 800
+        && (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 300))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidReview(data, reviewId, userId) {
+      return data.keys().hasAll(['id', 'ownerId', 'businessId', 'author', 'rating', 'date', 'comment', 'createdAt'])
+        && data.keys().hasOnly(['id', 'ownerId', 'businessId', 'author', 'rating', 'date', 'comment', 'createdAt'])
+        && isValidId(data.id)
+        && data.id == reviewId
+        && isValidId(data.ownerId)
+        && data.ownerId == userId
+        && data.ownerId == request.auth.uid
+        && isValidId(data.businessId)
+        && data.author is string && data.author.size() >= 1 && data.author.size() <= 60
+        && data.rating is number && data.rating >= 1 && data.rating <= 5
+        && data.date is string && data.date.size() >= 1 && data.date.size() <= 32
+        && data.comment is string && data.comment.size() >= 1 && data.comment.size() <= 1000
+        && data.createdAt is timestamp;
+    }
+
+    function isValidCommunityPost(data, postId, userId) {
+      return data.keys().hasAll(['id', 'ownerId', 'businessId', 'type', 'title', 'details', 'date', 'createdAt'])
+        && data.keys().hasOnly(['id', 'ownerId', 'businessId', 'type', 'title', 'details', 'date', 'createdAt'])
+        && isValidId(data.id)
+        && data.id == postId
+        && isValidId(data.ownerId)
+        && data.ownerId == userId
+        && data.ownerId == request.auth.uid
+        && isValidId(data.businessId)
+        && data.type in ['specials', 'events', 'jobs']
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 140
+        && data.details is string && data.details.size() >= 1 && data.details.size() <= 1000
+        && data.date is string && data.date.size() >= 1 && data.date.size() <= 64
+        && data.createdAt is timestamp;
+    }
+
+    function isValidInsightList(items) {
+      return items is list
+        && items.size() <= 6
+        && (items.size() == 0 || (items[0] is map && items[0].keys().size() <= 6));
+    }
+
+    function isValidSavedAnalysis(data, businessId, userId) {
+      return data.keys().hasAll(['businessId', 'ownerId', 'signature', 'summary', 'loves', 'unhappy', 'actions', 'updatedAt'])
+        && data.keys().hasOnly(['businessId', 'ownerId', 'signature', 'summary', 'loves', 'unhappy', 'actions', 'updatedAt'])
+        && isValidId(data.businessId)
+        && data.businessId == businessId
+        && isValidId(data.ownerId)
+        && data.ownerId == userId
+        && data.ownerId == request.auth.uid
+        && data.signature is string && data.signature.size() >= 1 && data.signature.size() <= 5000
+        && data.summary is string && data.summary.size() <= 1000
+        && isValidInsightList(data.loves)
+        && isValidInsightList(data.unhappy)
+        && isValidInsightList(data.actions)
+        && data.updatedAt is timestamp;
+    }
+
+    function parentBusinessExists(userId, businessId) {
+      return existsAfter(/databases/$(database)/documents/users/$(userId)/businesses/$(businessId));
+    }
+
+    match /users/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow list: if false;
+      allow create: if isValidId(userId)
+        && isOwner(userId)
+        && isValidUserWorkspace(incoming(), userId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(userId)
+        && isOwner(userId)
+        && isValidUserWorkspace(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'seeded', 'updatedAt']);
+      allow delete: if isValidId(userId) && isOwner(userId);
+
+      match /businesses/{businessId} {
+        allow get: if isValidId(userId) && isValidId(businessId) && isOwner(userId)
+          && existing().ownerId == request.auth.uid;
+        allow list: if isValidId(userId) && isOwner(userId)
+          && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId)
+          && isValidId(businessId)
+          && isOwner(userId)
+          && isValidBusiness(incoming(), businessId, userId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time;
+        allow update: if isValidId(userId)
+          && isValidId(businessId)
+          && isOwner(userId)
+          && isValidBusiness(incoming(), businessId, userId)
+          && incoming().id == existing().id
+          && incoming().ownerId == existing().ownerId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'category', 'description', 'imageUrl', 'updatedAt']);
+        allow delete: if isValidId(userId) && isValidId(businessId) && isOwner(userId)
+          && existing().ownerId == request.auth.uid;
+      }
+
+      match /reviews/{reviewId} {
+        allow get: if isValidId(userId) && isValidId(reviewId) && isOwner(userId)
+          && existing().ownerId == request.auth.uid;
+        allow list: if isValidId(userId) && isOwner(userId)
+          && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId)
+          && isValidId(reviewId)
+          && isOwner(userId)
+          && isValidReview(incoming(), reviewId, userId)
+          && incoming().createdAt == request.time
+          && parentBusinessExists(userId, incoming().businessId);
+        allow update: if false;
+        allow delete: if isValidId(userId) && isValidId(reviewId) && isOwner(userId)
+          && existing().ownerId == request.auth.uid;
+      }
+
+      match /posts/{postId} {
+        allow get: if isValidId(userId) && isValidId(postId) && isOwner(userId)
+          && existing().ownerId == request.auth.uid;
+        allow list: if isValidId(userId) && isOwner(userId)
+          && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId)
+          && isValidId(postId)
+          && isOwner(userId)
+          && isValidCommunityPost(incoming(), postId, userId)
+          && incoming().createdAt == request.time
+          && parentBusinessExists(userId, incoming().businessId);
+        allow update: if false;
+        allow delete: if isValidId(userId) && isValidId(postId) && isOwner(userId)
+          && existing().ownerId == request.auth.uid;
+      }
+
+      match /analyses/{businessId} {
+        allow get: if isValidId(userId) && isValidId(businessId) && isOwner(userId)
+          && existing().ownerId == request.auth.uid;
+        allow list: if isValidId(userId) && isOwner(userId)
+          && existing().ownerId == request.auth.uid;
+        allow create: if isValidId(userId)
+          && isValidId(businessId)
+          && isOwner(userId)
+          && isValidSavedAnalysis(incoming(), businessId, userId)
+          && incoming().updatedAt == request.time
+          && parentBusinessExists(userId, incoming().businessId);
+        allow update: if isValidId(userId)
+          && isValidId(businessId)
+          && isOwner(userId)
+          && isValidSavedAnalysis(incoming(), businessId, userId)
+          && incoming().businessId == existing().businessId
+          && incoming().ownerId == existing().ownerId
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['signature', 'summary', 'loves', 'unhappy', 'actions', 'updatedAt']);
+        allow delete: if isValidId(userId) && isValidId(businessId) && isOwner(userId)
+          && existing().ownerId == request.auth.uid;
+      }
+    }
+  }
+}

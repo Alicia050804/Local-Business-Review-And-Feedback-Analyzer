@@ -1,0 +1,8 @@
+{
+  "name": " Local Business Review and Feedback Analyzer ",
+  "description": "Manage reviews, analyze feedback with AI, and showcase community highlights for your local business in one dashboard.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

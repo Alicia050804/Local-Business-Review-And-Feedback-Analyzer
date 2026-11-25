@@ -1,0 +1,274 @@
+{
+  "entities": {
+    "UserWorkspace": {
+      "title": "UserWorkspace",
+      "description": "Metadata for an authenticated user's saved neighborhood business workspace.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the workspace owner.",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Display name of the workspace owner.",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "seeded": {
+          "type": "boolean",
+          "description": "Whether initial neighborhood seed data has been saved."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when workspace was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when workspace was last updated."
+        }
+      },
+      "required": ["uid", "displayName", "seeded", "createdAt", "updatedAt"]
+    },
+    "Business": {
+      "title": "Business",
+      "description": "A local neighborhood business saved in the user's workspace.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Business identifier.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the user who saved this business.",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "description": "Business name.",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "category": {
+          "type": "string",
+          "description": "Business category.",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "description": {
+          "type": "string",
+          "description": "Business description.",
+          "minLength": 1,
+          "maxLength": 800
+        },
+        "imageUrl": {
+          "type": "string",
+          "description": "Optional relative or static image path.",
+          "maxLength": 300
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp on creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp on update."
+        }
+      },
+      "required": ["id", "ownerId", "name", "category", "description", "createdAt", "updatedAt"]
+    },
+    "Review": {
+      "title": "Review",
+      "description": "A customer review belonging to a saved business.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Review identifier.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the workspace owner.",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "businessId": {
+          "type": "string",
+          "description": "Parent business identifier.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "author": {
+          "type": "string",
+          "description": "Reviewer display name.",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "rating": {
+          "type": "number",
+          "description": "Star rating from 1 to 5."
+        },
+        "date": {
+          "type": "string",
+          "description": "Display date string (YYYY-MM-DD).",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "comment": {
+          "type": "string",
+          "description": "Customer review comment.",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp on creation."
+        }
+      },
+      "required": ["id", "ownerId", "businessId", "author", "rating", "date", "comment", "createdAt"]
+    },
+    "CommunityPost": {
+      "title": "CommunityPost",
+      "description": "An owner update (special, event, or job) belonging to a saved business.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Post identifier.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the workspace owner.",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "businessId": {
+          "type": "string",
+          "description": "Parent business identifier.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "type": {
+          "type": "string",
+          "description": "Category of community post.",
+          "enum": ["specials", "events", "jobs"]
+        },
+        "title": {
+          "type": "string",
+          "description": "Headline of the post.",
+          "minLength": 1,
+          "maxLength": 140
+        },
+        "details": {
+          "type": "string",
+          "description": "Details, price, or application instructions.",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "date": {
+          "type": "string",
+          "description": "Schedule or date text.",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp on creation."
+        }
+      },
+      "required": ["id", "ownerId", "businessId", "type", "title", "details", "date", "createdAt"]
+    },
+    "SavedAnalysis": {
+      "title": "SavedAnalysis",
+      "description": "Saved Gemini AI customer feedback analysis for a business.",
+      "type": "object",
+      "properties": {
+        "businessId": {
+          "type": "string",
+          "description": "Parent business identifier.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the workspace owner.",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "signature": {
+          "type": "string",
+          "description": "Review signature hash/string matching analyzed reviews.",
+          "minLength": 1,
+          "maxLength": 5000
+        },
+        "summary": {
+          "type": "string",
+          "description": "Overall service sentiment summary.",
+          "maxLength": 1000
+        },
+        "loves": {
+          "type": "array",
+          "description": "What customers love about the service (up to 6 items)."
+        },
+        "unhappy": {
+          "type": "array",
+          "description": "What customers are unhappy about (up to 6 items)."
+        },
+        "actions": {
+          "type": "array",
+          "description": "What owners can do to improve (up to 6 items)."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when analysis was saved."
+        }
+      },
+      "required": ["businessId", "ownerId", "signature", "summary", "loves", "unhappy", "actions", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserWorkspace" },
+      "description": "User workspace metadata document."
+    },
+    "/users/{userId}/businesses/{businessId}": {
+      "schema": { "$ref": "#/entities/Business" },
+      "description": "Saved local businesses owned by the user."
+    },
+    "/users/{userId}/reviews/{reviewId}": {
+      "schema": { "$ref": "#/entities/Review" },
+      "description": "Saved customer reviews linked to a business in the user's workspace."
+    },
+    "/users/{userId}/posts/{postId}": {
+      "schema": { "$ref": "#/entities/CommunityPost" },
+      "description": "Saved specials, events, and job posts linked to a business in the user's workspace."
+    },
+    "/users/{userId}/analyses/{businessId}": {
+      "schema": { "$ref": "#/entities/SavedAnalysis" },
+      "description": "Saved AI feedback insights per business in the user's workspace."
+    }
+  }
+}
