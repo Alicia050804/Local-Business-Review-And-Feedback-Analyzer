@@ -6,6 +6,7 @@ import kaSibitaneChipsImg from '../assets/images/ka_sibitane_slap_chips_17955418
 
 export const STORAGE_KEY = 'local_refreshments_directory_v1';
 export const ANALYSES_STORAGE_KEY = 'local_refreshments_analyses_v1';
+export const MY_FEEDBACK_IDS_KEY = 'local_refreshments_my_feedback_ids_v1';
 
 export const HERO_IMAGE_URL = heroMarketImg;
 
@@ -254,7 +255,7 @@ export function readEmbeddedWorkspace(): EmbeddedWorkspacePayload | null {
   return null;
 }
 
-function hydrateSeedImages(list: Business[]): Business[] {
+export function hydrateSeedImages(list: Business[]): Business[] {
   return list.map((biz) => {
     const seedMatch = SEED_BUSINESSES.find((s) => s.id === biz.id);
     const currentUrl = biz.imageUrl;
@@ -335,6 +336,29 @@ export function saveCachedAnalyses(analyses: Record<string, AnalysisState>): voi
     localStorage.setItem(ANALYSES_STORAGE_KEY, JSON.stringify(clean));
   } catch (err) {
     console.warn('Unable to persist cached analyses:', err);
+  }
+}
+
+export function loadMyFeedbackIds(): string[] {
+  try {
+    const raw = localStorage.getItem(MY_FEEDBACK_IDS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((x): x is string => typeof x === 'string');
+      }
+    }
+  } catch (err) {
+    console.warn('Unable to read submitted feedback IDs:', err);
+  }
+  return [];
+}
+
+export function saveMyFeedbackIds(ids: string[]): void {
+  try {
+    localStorage.setItem(MY_FEEDBACK_IDS_KEY, JSON.stringify(ids.slice(-100)));
+  } catch (err) {
+    console.warn('Unable to persist submitted feedback IDs:', err);
   }
 }
 

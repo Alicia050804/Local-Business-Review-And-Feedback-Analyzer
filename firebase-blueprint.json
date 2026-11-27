@@ -1,42 +1,8 @@
 {
   "entities": {
-    "UserWorkspace": {
-      "title": "UserWorkspace",
-      "description": "Metadata for an authenticated user's saved neighborhood business workspace.",
-      "type": "object",
-      "properties": {
-        "uid": {
-          "type": "string",
-          "description": "Firebase Auth UID of the workspace owner.",
-          "maxLength": 128,
-          "pattern": "^[a-zA-Z0-9_\\-]+$"
-        },
-        "displayName": {
-          "type": "string",
-          "description": "Display name of the workspace owner.",
-          "minLength": 1,
-          "maxLength": 100
-        },
-        "seeded": {
-          "type": "boolean",
-          "description": "Whether initial neighborhood seed data has been saved."
-        },
-        "createdAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "Server timestamp when workspace was created."
-        },
-        "updatedAt": {
-          "type": "string",
-          "format": "date-time",
-          "description": "Server timestamp when workspace was last updated."
-        }
-      },
-      "required": ["uid", "displayName", "seeded", "createdAt", "updatedAt"]
-    },
     "Business": {
       "title": "Business",
-      "description": "A local neighborhood business saved in the user's workspace.",
+      "description": "A public neighborhood business listing in the shared directory.",
       "type": "object",
       "properties": {
         "id": {
@@ -48,7 +14,8 @@
         },
         "ownerId": {
           "type": "string",
-          "description": "Firebase Auth UID of the user who saved this business.",
+          "description": "Firebase Auth UID of the business owner.",
+          "minLength": 1,
           "maxLength": 128,
           "pattern": "^[a-zA-Z0-9_\\-]+$"
         },
@@ -72,8 +39,12 @@
         },
         "imageUrl": {
           "type": "string",
-          "description": "Optional relative or static image path.",
+          "description": "Optional image URL or bundled asset path.",
           "maxLength": 300
+        },
+        "isPublic": {
+          "type": "boolean",
+          "description": "Marks directory listing as publicly readable."
         },
         "createdAt": {
           "type": "string",
@@ -86,11 +57,11 @@
           "description": "Server timestamp on update."
         }
       },
-      "required": ["id", "ownerId", "name", "category", "description", "createdAt", "updatedAt"]
+      "required": ["id", "ownerId", "name", "category", "description", "isPublic", "createdAt", "updatedAt"]
     },
     "Review": {
       "title": "Review",
-      "description": "A customer review belonging to a saved business.",
+      "description": "Community member feedback and optional owner/staff reply for a business.",
       "type": "object",
       "properties": {
         "id": {
@@ -100,15 +71,16 @@
           "maxLength": 128,
           "pattern": "^[a-zA-Z0-9_\\-]+$"
         },
-        "ownerId": {
-          "type": "string",
-          "description": "Firebase Auth UID of the workspace owner.",
-          "maxLength": 128,
-          "pattern": "^[a-zA-Z0-9_\\-]+$"
-        },
         "businessId": {
           "type": "string",
           "description": "Parent business identifier.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "authorUid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the community member who wrote the review.",
           "minLength": 1,
           "maxLength": 128,
           "pattern": "^[a-zA-Z0-9_\\-]+$"
@@ -131,21 +103,34 @@
         },
         "comment": {
           "type": "string",
-          "description": "Customer review comment.",
+          "description": "Customer feedback comment.",
           "minLength": 1,
           "maxLength": 1000
+        },
+        "isPublic": {
+          "type": "boolean",
+          "description": "Marks review as publicly readable."
+        },
+        "ownerReply": {
+          "type": "object",
+          "description": "Optional reply sent by the business owner or authorized staff."
         },
         "createdAt": {
           "type": "string",
           "format": "date-time",
           "description": "Server timestamp on creation."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp on creation or owner reply."
         }
       },
-      "required": ["id", "ownerId", "businessId", "author", "rating", "date", "comment", "createdAt"]
+      "required": ["id", "businessId", "authorUid", "author", "rating", "date", "comment", "isPublic", "createdAt", "updatedAt"]
     },
     "CommunityPost": {
       "title": "CommunityPost",
-      "description": "An owner update (special, event, or job) belonging to a saved business.",
+      "description": "An owner/staff update (special, event, or job) for a business.",
       "type": "object",
       "properties": {
         "id": {
@@ -155,15 +140,16 @@
           "maxLength": 128,
           "pattern": "^[a-zA-Z0-9_\\-]+$"
         },
-        "ownerId": {
-          "type": "string",
-          "description": "Firebase Auth UID of the workspace owner.",
-          "maxLength": 128,
-          "pattern": "^[a-zA-Z0-9_\\-]+$"
-        },
         "businessId": {
           "type": "string",
           "description": "Parent business identifier.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "authorUid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the owner or staff member.",
           "minLength": 1,
           "maxLength": 128,
           "pattern": "^[a-zA-Z0-9_\\-]+$"
@@ -191,13 +177,17 @@
           "minLength": 1,
           "maxLength": 64
         },
+        "isPublic": {
+          "type": "boolean",
+          "description": "Marks post as publicly readable."
+        },
         "createdAt": {
           "type": "string",
           "format": "date-time",
           "description": "Server timestamp on creation."
         }
       },
-      "required": ["id", "ownerId", "businessId", "type", "title", "details", "date", "createdAt"]
+      "required": ["id", "businessId", "authorUid", "type", "title", "details", "date", "isPublic", "createdAt"]
     },
     "SavedAnalysis": {
       "title": "SavedAnalysis",
@@ -211,15 +201,16 @@
           "maxLength": 128,
           "pattern": "^[a-zA-Z0-9_\\-]+$"
         },
-        "ownerId": {
+        "authorUid": {
           "type": "string",
-          "description": "Firebase Auth UID of the workspace owner.",
+          "description": "Firebase Auth UID of user saving the analysis.",
+          "minLength": 1,
           "maxLength": 128,
           "pattern": "^[a-zA-Z0-9_\\-]+$"
         },
         "signature": {
           "type": "string",
-          "description": "Review signature hash/string matching analyzed reviews.",
+          "description": "Review signature string matching analyzed reviews.",
           "minLength": 1,
           "maxLength": 5000
         },
@@ -240,35 +231,91 @@
           "type": "array",
           "description": "What owners can do to improve (up to 6 items)."
         },
+        "isPublic": {
+          "type": "boolean",
+          "description": "Marks insights as publicly readable."
+        },
         "updatedAt": {
           "type": "string",
           "format": "date-time",
           "description": "Server timestamp when analysis was saved."
         }
       },
-      "required": ["businessId", "ownerId", "signature", "summary", "loves", "unhappy", "actions", "updatedAt"]
+      "required": ["businessId", "authorUid", "signature", "summary", "loves", "unhappy", "actions", "isPublic", "updatedAt"]
+    },
+    "StaffMember": {
+      "title": "StaffMember",
+      "description": "Authorized staff or manager email granted access to a business's Staff Portal.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Normalized email key identifier.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "businessId": {
+          "type": "string",
+          "description": "Parent business identifier.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the business owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "description": "Lowercase Google email address of the authorized staff member.",
+          "minLength": 3,
+          "maxLength": 160
+        },
+        "role": {
+          "type": "string",
+          "description": "Role label shown on replies.",
+          "enum": ["Owner", "Manager", "Staff"]
+        },
+        "addedByUid": {
+          "type": "string",
+          "description": "UID of the owner/admin who authorized this staff member.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp on creation."
+        }
+      },
+      "required": ["id", "businessId", "ownerId", "email", "role", "addedByUid", "createdAt"]
     }
   },
   "firestore": {
-    "/users/{userId}": {
-      "schema": { "$ref": "#/entities/UserWorkspace" },
-      "description": "User workspace metadata document."
-    },
-    "/users/{userId}/businesses/{businessId}": {
+    "/businesses/{businessId}": {
       "schema": { "$ref": "#/entities/Business" },
-      "description": "Saved local businesses owned by the user."
+      "description": "Public neighborhood business listings managed by owners and admins."
     },
-    "/users/{userId}/reviews/{reviewId}": {
+    "/businesses/{businessId}/reviews/{reviewId}": {
       "schema": { "$ref": "#/entities/Review" },
-      "description": "Saved customer reviews linked to a business in the user's workspace."
+      "description": "Community feedback for a business, including owner/staff replies."
     },
-    "/users/{userId}/posts/{postId}": {
+    "/businesses/{businessId}/posts/{postId}": {
       "schema": { "$ref": "#/entities/CommunityPost" },
-      "description": "Saved specials, events, and job posts linked to a business in the user's workspace."
+      "description": "Owner/staff specials, events, and job posts for a business."
     },
-    "/users/{userId}/analyses/{businessId}": {
+    "/businesses/{businessId}/analyses/{analysisId}": {
       "schema": { "$ref": "#/entities/SavedAnalysis" },
-      "description": "Saved AI feedback insights per business in the user's workspace."
+      "description": "AI customer feedback insights for a business."
+    },
+    "/businesses/{businessId}/staffMembers/{memberId}": {
+      "schema": { "$ref": "#/entities/StaffMember" },
+      "description": "Private staff authorization records scoped to a business."
     }
   }
 }

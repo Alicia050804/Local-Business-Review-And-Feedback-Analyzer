@@ -1,5 +1,12 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { ArrowLeft, Tag, Calendar, Briefcase } from 'lucide-react';
+import {
+  ArrowLeft,
+  Briefcase,
+  Calendar,
+  CornerDownRight,
+  ShieldCheck,
+  Tag,
+} from 'lucide-react';
 import {
   AnalysisState,
   Business,
@@ -17,8 +24,13 @@ interface BusinessProfileViewProps {
   activeTab: ProfileTab;
   analysisState?: AnalysisState;
   ownerDraft?: OwnerDraft | null;
+  isSignedIn: boolean;
+  canManageBusiness?: boolean;
+  portableMode: boolean;
   onClearOwnerDraft?: () => void;
   onBack: () => void;
+  onOpenStaffPortal: () => void;
+  onSignIn: () => void;
   onTabChange: (tab: ProfileTab) => void;
   onRunAnalysis: (forceRefresh?: boolean) => void;
   onCreateOwnerPostFromAction: (draft: OwnerDraft) => void;
@@ -37,15 +49,20 @@ const PROFILE_TABS: { id: ProfileTab; label: string }[] = [
   { id: 'owner', label: 'Owner Update Portal' },
 ];
 
-type ReviewSentimentFilter = 'all' | 'positive' | 'attention';
+type ReviewSentimentFilter = 'all' | 'positive' | 'attention' | 'replied';
 
 export function BusinessProfileView({
   business,
   activeTab,
   analysisState,
   ownerDraft,
+  isSignedIn,
+  canManageBusiness = true,
+  portableMode,
   onClearOwnerDraft,
   onBack,
+  onOpenStaffPortal,
+  onSignIn,
   onTabChange,
   onRunAnalysis,
   onCreateOwnerPostFromAction,
@@ -73,6 +90,7 @@ export function BusinessProfileView({
 
   const avg = getAverageRating(business);
   const reviewCount = business.reviews.length;
+  const replyCount = business.reviews.filter((r) => Boolean(r.ownerReply)).length;
 
   const filteredReviews = business.reviews
     .slice()
@@ -80,6 +98,7 @@ export function BusinessProfileView({
     .filter((rev) => {
       if (reviewFilter === 'positive') return rev.rating >= 4;
       if (reviewFilter === 'attention') return rev.rating <= 3;
+      if (reviewFilter === 'replied') return Boolean(rev.ownerReply);
       return true;
     });
 
@@ -110,7 +129,7 @@ export function BusinessProfileView({
 
   return (
     <div className="space-y-6">
-      <div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <button
           type="button"
           onClick={onBack}
@@ -118,6 +137,15 @@ export function BusinessProfileView({
         >
           <ArrowLeft className="w-4 h-4" aria-hidden="true" />
           <span>Back to All Local Businesses</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={onOpenStaffPortal}
+          className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-limefresh hover:underline underline-offset-2 cursor-pointer"
+        >
+          <ShieldCheck className="w-4 h-4" aria-hidden="true" />
+          <span>Owner &amp; Staff Login to Reply</span>
         </button>
       </div>
 
@@ -216,12 +244,14 @@ export function BusinessProfileView({
             onCreateOwnerPost={onCreateOwnerPostFromAction}
           />
 
-          {/* Leave a Review + Reviews List */}
+          {/* Send Feedback + Community Feedback List */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
             <section className="lg:col-span-4 bg-white rounded-2xl border border-stone-200 p-6">
-              <h3 className="font-display text-lg font-bold text-charcoal">Leave a Review</h3>
-              <p className="text-xs text-stone-500 mt-1 mb-5">
-                Share what you loved or what could be improved for neighbors and the owner.
+              <h3 className="font-display text-lg font-bold text-charcoal">
+                Send Community Feedback
+              </h3>
+              <p className="text-xs text-stone-500 mt-1 mb-5 leading-relaxed">
+                Your feedback goes directly to {business.name}&apos;s Staff Portal. When the owner replies, it appears right below your comment.
               </p>
 
               <form onSubmit={handleReviewFormSubmit} className="space-y-4">
@@ -233,6 +263,7 @@ export function BusinessProfileView({
                     id="review-author"
                     required
                     type="text"
+                    maxLength={60}
                     value={reviewAuthor}
                     onChange={(e) => setReviewAuthor(e.target.value)}
                     placeholder="e.g., Sipho M."
@@ -260,12 +291,13 @@ export function BusinessProfileView({
 
                 <div>
                   <label htmlFor="review-comment" className="block text-xs font-semibold text-charcoal mb-1.5">
-                    Your Comment
+                    Your Feedback
                   </label>
                   <textarea
                     id="review-comment"
                     required
                     rows={3}
+                    maxLength={1000}
                     value={reviewComment}
                     onChange={(e) => setReviewComment(e.target.value)}
                     placeholder="How was the food, freshness, wait time, or service?"
@@ -277,28 +309,55 @@ export function BusinessProfileView({
                   type="submit"
                   className="w-full py-2.5 rounded-lg bg-mango hover:bg-orange-600 text-white font-semibold text-sm transition-colors cursor-pointer"
                 >
-                  Post Review
+                  Send Feedback
                 </button>
+
+                {!isSignedIn && !portableMode && (
+                  <p className="text-xs text-stone-500 leading-relaxed pt-1">
+                    Posting as guest saves in this browser.{' '}
+                    <button
+                      type="button"
+                      onClick={onSignIn}
+                      className="text-limefresh font-semibold hover:underline cursor-pointer"
+                    >
+                      Sign in with Google
+                    </button>{' '}
+                    to publish directly to the live Staff Portal across devices.
+                  </p>
+                )}
               </form>
             </section>
 
             <section className="lg:col-span-8 space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <h3 className="font-display text-lg font-bold text-charcoal tabular-nums">
-                  Customer Reviews ({reviewCount})
-                </h3>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <h3 className="font-display text-lg font-bold text-charcoal tabular-nums">
+                    Community Feedback ({reviewCount})
+                  </h3>
+                  {replyCount > 0 && (
+                    <>
+                      <span aria-hidden="true" className="text-stone-300">
+                        ·
+                      </span>
+                      <span className="text-xs font-semibold text-limefresh tabular-nums">
+                        {replyCount} {replyCount === 1 ? 'owner reply' : 'owner replies'}
+                      </span>
+                    </>
+                  )}
+                </div>
 
                 {reviewCount > 0 && (
                   <div
-                    className="inline-flex items-center gap-1 p-1 bg-stone-100 rounded-lg self-start sm:self-auto"
+                    className="inline-flex flex-wrap items-center gap-1 p-1 bg-stone-100 rounded-lg self-start sm:self-auto"
                     role="tablist"
-                    aria-label="Filter customer reviews by sentiment"
+                    aria-label="Filter customer reviews"
                   >
                     {(
                       [
                         { key: 'all', label: 'All' },
                         { key: 'positive', label: 'Positive (4–5★)' },
                         { key: 'attention', label: 'Needs Attention (1–3★)' },
+                        { key: 'replied', label: 'Owner Replied' },
                       ] as const
                     ).map((item) => {
                       const active = reviewFilter === item.key;
@@ -325,11 +384,11 @@ export function BusinessProfileView({
 
               {reviewCount === 0 ? (
                 <div className="bg-white rounded-2xl border border-stone-200 p-10 text-center text-sm text-stone-500">
-                  No reviews yet. Be the first neighbor to review {business.name}.
+                  No feedback yet. Be the first neighbor to share feedback with {business.name}.
                 </div>
               ) : filteredReviews.length === 0 ? (
                 <div className="bg-white rounded-2xl border border-stone-200 p-8 text-center text-sm text-stone-500">
-                  No reviews match this rating filter.
+                  No feedback matches this filter.
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -354,7 +413,30 @@ export function BusinessProfileView({
                         </div>
                         <StarRating rating={rev.rating} size="sm" />
                       </div>
+
                       <p className="text-sm text-stone-700 leading-relaxed">{rev.comment}</p>
+
+                      {rev.ownerReply && (
+                        <div className="mt-4 pt-3.5 border-t border-stone-100 space-y-1.5">
+                          <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold text-limefresh">
+                            <CornerDownRight className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                            <span>{rev.ownerReply.authorRole} Replied</span>
+                            <span aria-hidden="true" className="text-stone-300">
+                              ·
+                            </span>
+                            <span className="text-charcoal">{rev.ownerReply.authorName}</span>
+                            <span aria-hidden="true" className="text-stone-300">
+                              ·
+                            </span>
+                            <span className="text-stone-400 font-normal tabular-nums">
+                              {rev.ownerReply.date}
+                            </span>
+                          </div>
+                          <p className="text-sm text-charcoal leading-relaxed pl-5">
+                            {rev.ownerReply.message}
+                          </p>
+                        </div>
+                      )}
                     </article>
                   ))}
                 </div>
@@ -456,18 +538,45 @@ export function BusinessProfileView({
       {/* Tab 3: Owner Update Portal */}
       {activeTab === 'owner' && (
         <section className="max-w-2xl mx-auto bg-white rounded-2xl border border-stone-200 p-6 sm:p-8">
-          <div className="mb-6">
-            <p className="text-xs font-semibold text-limefresh mb-1">
-              Owner Noticeboard Portal
-            </p>
-            <h2 className="font-display text-xl sm:text-2xl font-bold text-charcoal">
-              Post an Update for {business.name}
-            </h2>
-            <p className="text-sm text-stone-600 mt-1">
-              New specials, events, and jobs appear immediately on your profile and the home Community Highlights board.
-            </p>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+            <div>
+              <p className="text-xs font-semibold text-limefresh mb-1">
+                Owner Noticeboard Portal
+              </p>
+              <h2 className="font-display text-xl sm:text-2xl font-bold text-charcoal">
+                Post an Update for {business.name}
+              </h2>
+              <p className="text-sm text-stone-600 mt-1">
+                New specials, events, and jobs appear immediately on your profile and the home Community Highlights board.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onOpenStaffPortal}
+              className="px-3.5 py-2 rounded-lg border border-stone-300 bg-white hover:bg-stone-50 text-xs font-semibold text-charcoal whitespace-nowrap shrink-0 self-start cursor-pointer"
+            >
+              Open Feedback Inbox
+            </button>
           </div>
 
+          {!canManageBusiness && !portableMode ? (
+            <div className="border-t border-stone-200 pt-5 space-y-4">
+              <p className="text-sm text-stone-600 leading-relaxed">
+                {isSignedIn
+                  ? `Only ${business.name}'s owner, authorized staff, or directory admin can publish official updates here.`
+                  : `Sign in with an owner or staff Google account for ${business.name} to publish official specials, events, or jobs.`}
+              </p>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={isSignedIn ? onOpenStaffPortal : onSignIn}
+                  className="px-5 py-2.5 rounded-lg bg-limefresh hover:bg-emerald-700 text-white font-semibold text-sm transition-colors cursor-pointer"
+                >
+                  {isSignedIn ? 'Open Staff Portal' : 'Sign in with Google'}
+                </button>
+              </div>
+            </div>
+          ) : (
           <form onSubmit={handleOwnerFormSubmit} className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
@@ -541,6 +650,7 @@ export function BusinessProfileView({
               </button>
             </div>
           </form>
+          )}
         </section>
       )}
     </div>

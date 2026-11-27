@@ -1,22 +1,22 @@
-# Firestore Security Specification
+# Firestore Security Specification (Shared Directory & Staff Portal)
 
 ## 1. Data Invariants
-1. **Strict Workspace Isolation**: Every user document (`/users/{userId}`) and all workspace collections (`businesses`, `reviews`, `posts`, `analyses`) can only be read or written by the verified authenticated user whose `request.auth.uid == userId`.
-2. **Identity Integrity**: Every document created or updated must have `ownerId == request.auth.uid` (or `uid == request.auth.uid` on `/users/{userId}`), and `ownerId`/`uid`/`createdAt` are immutable once created.
-3. **Referential Integrity**: A `review`, `post`, or `analysis` document cannot be created unless the referenced parent business (`/users/{userId}/businesses/{businessId}`) exists (or is created atomically in the same batch via `existsAfter`).
-4. **Temporal Integrity**: All `createdAt` and `updatedAt` fields must equal `request.time` (`serverTimestamp()`).
-5. **Bounded Payloads & Strict Allowlists**: All document IDs match `^[a-zA-Z0-9_\-]+$` (`<= 128` chars), all strings have explicit max `.size()` bounds, all arrays (`loves`, `unhappy`, `actions`) are capped at `<= 6` entries, and `keys().hasOnly(...)` blocks shadow fields.
+1. **Public Directory Without PII**: Publicly listable collections (`/businesses`, `/businesses/{businessId}/reviews`, `/businesses/{businessId}/posts`, `/businesses/{businessId}/analyses`) never contain email addresses, phone numbers, or private user data, and `allow list` explicitly requires `resource.data.isPublic == true`.
+2. **Verified Community Submissions**: Creating a community review requires a verified Google user (`request.auth.token.email_verified == true`), `authorUid == request.auth.uid`, valid rating (`1..5`), bounded fields, and forbids setting `ownerReply` during initial creation unless the caller is authorized staff/owner.
+3. **Owner & Staff Reply Authorization**: Updating a review is strictly restricted to the business owner, authorized staff in `/businesses/{businessId}/staffMembers/{staffKey}`, or the bootstrapped admin (`xolilemalele@gmail.com` with `email_verified == true`), and `affectedKeys().hasOnly(['ownerReply', 'updatedAt'])` keeps all customer review fields immutable.
+4. **PII Isolation on Staff Members**: `/businesses/{businessId}/staffMembers/{memberId}` stores staff emails and is strictly unreadable by the public or unrelated users—only the business owner, admin, or the matching verified staff member can read it.
+5. **Temporal & Referential Integrity**: Subcollection writes verify parent business existence via `existsAfter`, and `createdAt`/`updatedAt`/`repliedAt` must match `request.time`.
 
 ## 2. The "Dirty Dozen" Adversarial Payloads (Must All Return `PERMISSION_DENIED`)
-1. **Unauthenticated Read/Write**: Reading or writing `/users/alice/businesses/biz-1` with `auth == null`.
-2. **Unverified Email Write**: Writing `/users/alice/businesses/biz-1` with `auth.uid == 'alice'` and `auth.token.email_verified == false`.
-3. **Cross-User Read/List**: Listing `/users/alice/businesses` while authenticated as `bob`.
-4. **Identity Spoofing on Create**: Creating `/users/alice/businesses/biz-1` as `alice` with `ownerId: 'bob'`.
-5. **Shadow Field Injection**: Creating `/users/alice/businesses/biz-1` with an extra `isAdmin: true` or `verified: true` field.
-6. **ID Poisoning**: Creating `/users/alice/businesses/invalid id with spaces and $$$` or a 500-character ID.
-7. **Denial-of-Wallet Oversized String**: Creating a review with a 50,000-character `comment`.
-8. **Orphaned Review Write**: Creating `/users/alice/reviews/rev-1` referencing `businessId: 'non-existent-biz'`.
-9. **Rating Boundary Bypass**: Creating a review with `rating: 99` or `rating: 0` or `rating: 'five'`.
-10. **Invalid Post Type Enum**: Creating a post with `type: 'admin_banner'` instead of `'specials' | 'events' | 'jobs'`.
-11. **Timestamp Tampering**: Creating a business with `createdAt: new Date('2020-01-01')` instead of `request.time`.
-12. **Immutable Field Mutation**: Updating a review or business to change `ownerId` or `createdAt`, or adding an unapproved field in `affectedKeys()`.
+1. **Unauthenticated Review Creation**: Posting to `/businesses/thubelihlee/reviews/rev-1` with `auth == null`.
+2. **Unverified Email Staff Spoof**: Trying to reply as `xolilemalele@gmail.com` when `email_verified == false`.
+3. **Non-Staff Owner Reply**: A regular community member updating `/businesses/thubelihlee/reviews/rev-1` to inject `ownerReply`.
+4. **Customer Comment Tampering on Reply**: An owner/staff member updating `comment` or `rating` alongside `ownerReply` on a customer's review.
+5. **Shadow Field Injection on Review**: Creating a review with an extra `isVerifiedOwner: true` or `ownerReply` field as a non-staff community member.
+6. **Unauthorized Staff Escalation**: A non-owner user creating `/businesses/thubelihlee/staffMembers/me` to grant themselves staff access.
+7. **Cross-User Staff PII Read**: Reading `/businesses/thubelihlee/staffMembers/other_user` as an unrelated community member.
+8. **Blanket Unconstrained List Query**: Listing `staffMembers` without matching ownership, admin, or matching verified email.
+9. **Orphaned Review/Post**: Creating a review under `/businesses/missing-biz/reviews/rev-1`.
+10. **ID Poisoning**: Creating a business or review with spaces/symbols or >128 char IDs.
+11. **Oversized Denial-of-Wallet Payload**: Sending a 50KB `ownerReply.message` or review `comment`.
+12. **Timestamp Forgery**: Setting `ownerReply.repliedAt` or `createdAt` to a client-chosen past/future date instead of `request.time`.

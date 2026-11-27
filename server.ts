@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { fileURLToPath } from 'url';
@@ -15,6 +16,136 @@ interface ReviewInput {
   author: string;
   rating: number;
   comment: string;
+}
+
+interface DemoOwnerReply {
+  message: string;
+  authorName: string;
+  authorRole: 'Owner' | 'Manager' | 'Staff';
+  authorUid?: string;
+  date: string;
+}
+
+interface DemoReview {
+  id: string;
+  author: string;
+  authorUid?: string;
+  rating: number;
+  date: string;
+  comment: string;
+  ownerReply?: DemoOwnerReply;
+}
+
+interface DemoPost {
+  id: string;
+  title: string;
+  details: string;
+  date: string;
+}
+
+interface DemoBusiness {
+  id: string;
+  ownerId?: string;
+  name: string;
+  category: string;
+  description: string;
+  imageUrl?: string;
+  reviews: DemoReview[];
+  specials: DemoPost[];
+  events: DemoPost[];
+  jobs: DemoPost[];
+}
+
+interface DemoTokenPayload {
+  email: string;
+  displayName: string;
+  role: 'Owner' | 'Manager' | 'Staff';
+  exp: number;
+}
+
+function safeClip(value: unknown, max: number, fallback = ''): string {
+  if (typeof value !== 'string') return fallback;
+  const trimmed = value.trim();
+  return trimmed ? trimmed.slice(0, max) : fallback;
+}
+
+function normalizeStaffRole(val: unknown): 'Owner' | 'Manager' | 'Staff' {
+  if (val === 'Owner' || val === 'Manager' || val === 'Staff') return val;
+  return 'Owner';
+}
+
+function sanitizeDemoBusinessList(rawList: unknown): DemoBusiness[] {
+  if (!Array.isArray(rawList)) return [];
+  return rawList
+    .slice(0, 50)
+    .filter((b): b is Record<string, unknown> => Boolean(b) && typeof b === 'object')
+    .map((b) => {
+      const sanitizePosts = (arr: unknown): DemoPost[] =>
+        Array.isArray(arr)
+          ? arr
+              .slice(0, 50)
+              .filter((p): p is Record<string, unknown> => Boolean(p) && typeof p === 'object')
+              .map((p) => ({
+                id: safeClip(p.id, 128, `post-${Date.now()}`),
+                title: safeClip(p.title, 140, 'Update'),
+                details: safeClip(p.details, 1000, 'Details'),
+                date: safeClip(p.date, 64, 'This Week'),
+              }))
+          : [];
+
+      const reviews: DemoReview[] = Array.isArray(b.reviews)
+        ? b.reviews
+            .slice(0, 200)
+            .filter((r): r is Record<string, unknown> => Boolean(r) && typeof r === 'object')
+            .map((r) => {
+              const rawReply =
+                r.ownerReply && typeof r.ownerReply === 'object'
+                  ? (r.ownerReply as Record<string, unknown>)
+                  : null;
+              const ownerReply: DemoOwnerReply | undefined =
+                rawReply && typeof rawReply.message === 'string' && rawReply.message.trim()
+                  ? {
+                      message: safeClip(rawReply.message, 1000),
+                      authorName: safeClip(rawReply.authorName, 60, 'Owner'),
+                      authorRole: normalizeStaffRole(rawReply.authorRole),
+                      ...(typeof rawReply.authorUid === 'string' && rawReply.authorUid
+                        ? { authorUid: safeClip(rawReply.authorUid, 128) }
+                        : {}),
+                      date: safeClip(rawReply.date, 32, new Date().toISOString().slice(0, 10)),
+                    }
+                  : undefined;
+
+              return {
+                id: safeClip(r.id, 128, `rev-${Date.now()}`),
+                author: safeClip(r.author, 60, 'Neighbor'),
+                ...(typeof r.authorUid === 'string' && r.authorUid
+                  ? { authorUid: safeClip(r.authorUid, 128) }
+                  : {}),
+                rating: Math.min(5, Math.max(1, Math.round(Number(r.rating) || 5))),
+                date: safeClip(r.date, 32, new Date().toISOString().slice(0, 10)),
+                comment: safeClip(r.comment, 1000, 'Great spot!'),
+                ...(ownerReply ? { ownerReply } : {}),
+              };
+            })
+        : [];
+
+      return {
+        id: safeClip(b.id, 128, `biz-${Date.now()}`),
+        ...(typeof b.ownerId === 'string' && b.ownerId
+          ? { ownerId: safeClip(b.ownerId, 128) }
+          : {}),
+        name: safeClip(b.name, 120, 'Local Business'),
+        category: safeClip(b.category, 80, 'Local Spot'),
+        description: safeClip(b.description, 800, 'Neighborhood spot'),
+        ...(typeof b.imageUrl === 'string' && b.imageUrl
+          ? { imageUrl: safeClip(b.imageUrl, 300) }
+          : {}),
+        reviews,
+        specials: sanitizePosts(b.specials),
+        events: sanitizePosts(b.events),
+        jobs: sanitizePosts(b.jobs),
+      };
+    });
 }
 
 function getGeminiClient(): GoogleGenAI {
@@ -334,6 +465,291 @@ Return a JSON object with:
         error: 'Unable to complete Gemini feedback analysis right now. Please try again shortly.',
       });
     }
+  });
+
+  const demoStaffEmail = (
+    process.env.DEMO_STAFF_EMAIL?.trim().toLowerCase() ||
+    'staff-demo@localrefreshments.demo'
+  );
+  const envDemoPasscode = process.env.DEMO_STAFF_PASSCODE?.trim() || '';
+  const generatedSandboxCode = envDemoPasscode || crypto.randomBytes(3).toString('hex').toUpperCase();
+  const demoSalt = crypto.randomBytes(16).toString('hex');
+  const demoPasscodeHash = crypto.scryptSync(generatedSandboxCode, demoSalt, 64);
+  const demoTokenSecret =
+    process.env.DEMO_SESSION_SECRET?.trim() || crypto.randomBytes(32).toString('hex');
+
+  function verifyDemoPasscode(candidate: string): boolean {
+    const derived = crypto.scryptSync(candidate.trim(), demoSalt, 64);
+    return crypto.timingSafeEqual(derived, demoPasscodeHash);
+  }
+
+  function signDemoToken(payload: DemoTokenPayload): string {
+    const encoded = Buffer.from(JSON.stringify(payload), 'utf-8').toString('base64url');
+    const sig = crypto
+      .createHmac('sha256', demoTokenSecret)
+      .update(encoded)
+      .digest('base64url');
+    return `${encoded}.${sig}`;
+  }
+
+  function verifyDemoToken(authHeader?: string): DemoTokenPayload | null {
+    if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+    const rawToken = authHeader.slice(7).trim();
+    const parts = rawToken.split('.');
+    if (parts.length !== 2) return null;
+    const [encoded, sig] = parts;
+    const expectedSig = crypto
+      .createHmac('sha256', demoTokenSecret)
+      .update(encoded)
+      .digest('base64url');
+    const sigBuf = Buffer.from(sig);
+    const expectedBuf = Buffer.from(expectedSig);
+    if (sigBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(sigBuf, expectedBuf)) {
+      return null;
+    }
+    try {
+      const parsed = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf-8')) as DemoTokenPayload;
+      if (!parsed || typeof parsed.exp !== 'number' || parsed.exp < Date.now()) {
+        return null;
+      }
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
+
+  let demoBusinesses: DemoBusiness[] | null = null;
+  let demoUpdatedAt = 0;
+
+  app.get('/api/demo-staff/sandbox', (_req, res) => {
+    res.json({
+      enabled: true,
+      email: demoStaffEmail,
+      ...(envDemoPasscode ? { requiresConfiguredPasscode: true } : { accessCode: generatedSandboxCode }),
+      displayName: 'Demo Store Owner',
+      role: 'Owner',
+    });
+  });
+
+  app.post('/api/demo-staff/login', (req, res) => {
+    const { email, accessCode } = req.body ?? {};
+    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+    const candidateCode = typeof accessCode === 'string' ? accessCode.trim() : '';
+
+    if (!normalizedEmail || !candidateCode) {
+      res.status(400).json({ error: 'Staff email and access code are required.' });
+      return;
+    }
+
+    if (normalizedEmail !== demoStaffEmail || !verifyDemoPasscode(candidateCode)) {
+      res.status(401).json({ error: 'Invalid decoy staff email or access code.' });
+      return;
+    }
+
+    const payload: DemoTokenPayload = {
+      email: demoStaffEmail,
+      displayName: 'Demo Store Owner',
+      role: 'Owner',
+      exp: Date.now() + 24 * 60 * 60 * 1000,
+    };
+    const token = signDemoToken(payload);
+
+    res.json({
+      token,
+      session: {
+        token,
+        email: payload.email,
+        displayName: payload.displayName,
+        role: payload.role,
+        businessIds: ['*'],
+      },
+    });
+  });
+
+  app.get('/api/demo-directory', (_req, res) => {
+    res.json({
+      businesses: demoBusinesses,
+      updatedAt: demoUpdatedAt,
+    });
+  });
+
+  app.post('/api/demo-directory/reviews', (req, res) => {
+    const { businessId, review, businessesSnapshot } = req.body ?? {};
+    const cleanBizId = safeClip(businessId, 128);
+    if (!cleanBizId || !review || typeof review !== 'object') {
+      res.status(400).json({ error: 'Business ID and feedback details are required.' });
+      return;
+    }
+
+    if (demoBusinesses === null && Array.isArray(businessesSnapshot)) {
+      demoBusinesses = sanitizeDemoBusinessList(businessesSnapshot);
+    }
+
+    if (!demoBusinesses) {
+      res.status(400).json({ error: 'Directory state is not initialized yet.' });
+      return;
+    }
+
+    const revObj = review as Record<string, unknown>;
+    const comment = safeClip(revObj.comment, 1000);
+    const author = safeClip(revObj.author, 60);
+    if (!comment || !author) {
+      res.status(400).json({ error: 'Name and feedback comment are required.' });
+      return;
+    }
+
+    const cleanReview: DemoReview = {
+      id: safeClip(revObj.id, 128, `rev-${Date.now()}`),
+      author,
+      rating: Math.min(5, Math.max(1, Math.round(Number(revObj.rating) || 5))),
+      date: safeClip(revObj.date, 32, new Date().toISOString().slice(0, 10)),
+      comment,
+    };
+
+    demoBusinesses = demoBusinesses.map((biz) => {
+      if (biz.id !== cleanBizId) return biz;
+      const exists = biz.reviews.some((r) => r.id === cleanReview.id);
+      if (exists) return biz;
+      return { ...biz, reviews: [...biz.reviews, cleanReview] };
+    });
+    demoUpdatedAt = Date.now();
+
+    res.json({ businesses: demoBusinesses, updatedAt: demoUpdatedAt });
+  });
+
+  app.post('/api/demo-directory/replies', (req, res) => {
+    const staffSession = verifyDemoToken(req.headers.authorization);
+    if (!staffSession) {
+      res.status(401).json({ error: 'Please sign into the Staff Portal before sending a reply.' });
+      return;
+    }
+
+    const { businessId, reviewId, reply, businessesSnapshot } = req.body ?? {};
+    const cleanBizId = safeClip(businessId, 128);
+    const cleanReviewId = safeClip(reviewId, 128);
+    if (!cleanBizId || !cleanReviewId || !reply || typeof reply !== 'object') {
+      res.status(400).json({ error: 'Business ID, review ID, and reply details are required.' });
+      return;
+    }
+
+    if (demoBusinesses === null && Array.isArray(businessesSnapshot)) {
+      demoBusinesses = sanitizeDemoBusinessList(businessesSnapshot);
+    }
+
+    if (!demoBusinesses) {
+      res.status(400).json({ error: 'Directory state is not initialized yet.' });
+      return;
+    }
+
+    const replyObj = reply as Record<string, unknown>;
+    const message = safeClip(replyObj.message, 1000);
+    if (!message) {
+      res.status(400).json({ error: 'Reply message cannot be empty.' });
+      return;
+    }
+
+    const cleanReply: DemoOwnerReply = {
+      message,
+      authorName: safeClip(replyObj.authorName, 60, staffSession.displayName),
+      authorRole: normalizeStaffRole(replyObj.authorRole),
+      date: safeClip(replyObj.date, 32, new Date().toISOString().slice(0, 10)),
+    };
+
+    let matched = false;
+    demoBusinesses = demoBusinesses.map((biz) => {
+      if (biz.id !== cleanBizId) return biz;
+      return {
+        ...biz,
+        reviews: biz.reviews.map((rev) => {
+          if (rev.id !== cleanReviewId) return rev;
+          matched = true;
+          return { ...rev, ownerReply: cleanReply };
+        }),
+      };
+    });
+
+    if (!matched) {
+      res.status(404).json({ error: 'Target customer feedback was not found.' });
+      return;
+    }
+
+    demoUpdatedAt = Date.now();
+    res.json({ businesses: demoBusinesses, updatedAt: demoUpdatedAt });
+  });
+
+  app.post('/api/demo-directory/posts', (req, res) => {
+    const staffSession = verifyDemoToken(req.headers.authorization);
+    if (!staffSession) {
+      res.status(401).json({ error: 'Please sign into the Staff Portal before publishing updates.' });
+      return;
+    }
+
+    const { businessId, type, post, businessesSnapshot } = req.body ?? {};
+    const cleanBizId = safeClip(businessId, 128);
+    const cleanType = normalizePostType(type);
+    if (!cleanBizId || !cleanType || !post || typeof post !== 'object') {
+      res.status(400).json({ error: 'Valid business ID, post type, and post fields are required.' });
+      return;
+    }
+
+    if (demoBusinesses === null && Array.isArray(businessesSnapshot)) {
+      demoBusinesses = sanitizeDemoBusinessList(businessesSnapshot);
+    }
+
+    if (!demoBusinesses) {
+      res.status(400).json({ error: 'Directory state is not initialized yet.' });
+      return;
+    }
+
+    const postObj = post as Record<string, unknown>;
+    const cleanPost: DemoPost = {
+      id: safeClip(postObj.id, 128, `post-${Date.now()}`),
+      title: safeClip(postObj.title, 140, 'Update'),
+      details: safeClip(postObj.details, 1000, 'Details available.'),
+      date: safeClip(postObj.date, 64, 'This Week'),
+    };
+
+    demoBusinesses = demoBusinesses.map((biz) =>
+      biz.id === cleanBizId ? { ...biz, [cleanType]: [cleanPost, ...biz[cleanType]] } : biz
+    );
+    demoUpdatedAt = Date.now();
+    res.json({ businesses: demoBusinesses, updatedAt: demoUpdatedAt });
+  });
+
+  app.post('/api/demo-directory/businesses', (req, res) => {
+    const { business, businessesSnapshot } = req.body ?? {};
+    if (!business || typeof business !== 'object') {
+      res.status(400).json({ error: 'Business payload is required.' });
+      return;
+    }
+
+    if (demoBusinesses === null && Array.isArray(businessesSnapshot)) {
+      demoBusinesses = sanitizeDemoBusinessList(businessesSnapshot);
+    }
+
+    const [cleanBiz] = sanitizeDemoBusinessList([business]);
+    if (!cleanBiz) {
+      res.status(400).json({ error: 'Invalid business details.' });
+      return;
+    }
+
+    const existingList = demoBusinesses ?? [];
+    if (!existingList.some((b) => b.id === cleanBiz.id)) {
+      demoBusinesses = [cleanBiz, ...existingList];
+      demoUpdatedAt = Date.now();
+    }
+    res.json({ businesses: demoBusinesses, updatedAt: demoUpdatedAt });
+  });
+
+  app.post('/api/demo-directory/reset', (req, res) => {
+    const staffSession = verifyDemoToken(req.headers.authorization);
+    if (!staffSession) {
+      res.status(401).json({ error: 'Staff sign-in required to reset shared demo data.' });
+      return;
+    }
+    demoBusinesses = null;
+    demoUpdatedAt = Date.now();
+    res.json({ ok: true, updatedAt: demoUpdatedAt });
   });
 
   app.post('/api/export-html', async (req, res) => {

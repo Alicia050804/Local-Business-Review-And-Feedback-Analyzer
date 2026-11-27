@@ -1,9 +1,21 @@
+export type StaffRole = 'Owner' | 'Manager' | 'Staff';
+
+export interface OwnerReply {
+  message: string;
+  authorName: string;
+  authorRole: StaffRole;
+  authorUid?: string;
+  date: string;
+}
+
 export interface Review {
   id: string;
   author: string;
+  authorUid?: string;
   rating: number;
   date: string;
   comment: string;
+  ownerReply?: OwnerReply;
 }
 
 export interface CommunityPost {
@@ -17,6 +29,7 @@ export type PostCategoryKey = 'specials' | 'events' | 'jobs';
 
 export interface Business {
   id: string;
+  ownerId?: string;
   name: string;
   category: string;
   description: string;
@@ -25,6 +38,14 @@ export interface Business {
   specials: CommunityPost[];
   events: CommunityPost[];
   jobs: CommunityPost[];
+}
+
+export interface StaffMember {
+  id: string;
+  businessId: string;
+  ownerId: string;
+  email: string;
+  role: StaffRole;
 }
 
 export interface HighlightItem extends CommunityPost {
@@ -74,4 +95,12 @@ export interface OwnerDraft {
   title: string;
   details: string;
   date: string;
+}
+
+export interface DemoStaffSession {
+  token: string;
+  email: string;
+  displayName: string;
+  role: StaffRole;
+  businessIds: string[];
 }

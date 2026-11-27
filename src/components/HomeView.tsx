@@ -1,5 +1,5 @@
-import { Search, ArrowRight, X } from 'lucide-react';
-import { useState } from 'react';
+import { Search, ArrowRight, CornerDownRight, MessageSquarePlus, X } from 'lucide-react';
+import { FormEvent, useMemo, useState } from 'react';
 import {
   AnalysisState,
   Business,
@@ -7,6 +7,7 @@ import {
   HighlightItem,
   OwnerDraft,
   ProfileTab,
+  Review,
 } from '../types';
 import { HERO_IMAGE_URL, getAverageRating } from '../data/seedBusinesses';
 import { BusinessMedia } from './BusinessMedia';
@@ -20,9 +21,15 @@ interface HomeViewProps {
   searchQuery: string;
   analysisCache: Record<string, AnalysisState>;
   featuredBusinessId: string;
+  myFeedbackIds: string[];
+  currentUserUid?: string;
   onSelectFeaturedBusiness: (id: string) => void;
   onRunAnalysis: (biz: Business, forceRefresh?: boolean) => void;
   onCreateOwnerPost: (bizId: string, draft: OwnerDraft) => void;
+  onSubmitQuickFeedback: (
+    businessId: string,
+    input: { author: string; rating: number; comment: string }
+  ) => void;
   onSearchChange: (value: string) => void;
   onHighlightFilterChange: (filter: HighlightFilter) => void;
   onOpenBusiness: (id: string, tab?: ProfileTab) => void;
@@ -54,14 +61,56 @@ export function HomeView({
   searchQuery,
   analysisCache,
   featuredBusinessId,
+  myFeedbackIds,
+  currentUserUid,
   onSelectFeaturedBusiness,
   onRunAnalysis,
   onCreateOwnerPost,
+  onSubmitQuickFeedback,
   onSearchChange,
   onHighlightFilterChange,
   onOpenBusiness,
 }: HomeViewProps) {
   const [heroImgError, setHeroImgError] = useState(false);
+  const [isFeedbackFormOpen, setIsFeedbackFormOpen] = useState(false);
+  const [quickBizId, setQuickBizId] = useState(() => businesses[0]?.id ?? '');
+  const [quickAuthor, setQuickAuthor] = useState('');
+  const [quickRating, setQuickRating] = useState(5);
+  const [quickComment, setQuickComment] = useState('');
+
+  const mySubmittedFeedback = useMemo(() => {
+    const idSet = new Set(myFeedbackIds);
+    const items: { businessId: string; businessName: string; review: Review }[] = [];
+    for (const biz of businesses) {
+      for (const rev of biz.reviews || []) {
+        const isMine =
+          idSet.has(rev.id) || (Boolean(currentUserUid) && rev.authorUid === currentUserUid);
+        if (isMine) {
+          items.push({ businessId: biz.id, businessName: biz.name, review: rev });
+        }
+      }
+    }
+    return items.slice().reverse();
+  }, [businesses, myFeedbackIds, currentUserUid]);
+
+  const handleQuickFeedbackSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    const targetBizId =
+      businesses.find((b) => b.id === quickBizId)?.id ?? businesses[0]?.id ?? '';
+    const author = quickAuthor.trim();
+    const comment = quickComment.trim();
+    if (!targetBizId || !author || !comment) return;
+
+    onSubmitQuickFeedback(targetBizId, {
+      author,
+      rating: quickRating,
+      comment,
+    });
+    setQuickAuthor('');
+    setQuickRating(5);
+    setQuickComment('');
+    setIsFeedbackFormOpen(false);
+  };
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
 
@@ -163,6 +212,195 @@ export function HomeView({
         </div>
       </section>
 
+      {/* Feedback Writer Portal: Send Feedback & Track Owner Replies */}
+      <section
+        id="my-feedback-section"
+        className="bg-white rounded-2xl border border-stone-200 p-6 sm:p-8 space-y-5"
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold text-mango mb-1">
+              Community Member Feedback Portal
+            </p>
+            <h2 className="font-display text-xl sm:text-2xl font-bold text-charcoal">
+              Send Feedback &amp; Read Owner Replies
+            </h2>
+            <p className="text-sm text-stone-600 mt-1">
+              Feedback you send here goes directly to the Staff Portal. Whenever a business owner or staff member replies, their response appears right here.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (!quickBizId && businesses[0]) setQuickBizId(businesses[0].id);
+              setIsFeedbackFormOpen((prev) => !prev);
+            }}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-mango hover:bg-orange-600 text-white text-sm font-semibold transition-colors whitespace-nowrap shrink-0 self-start sm:self-auto cursor-pointer"
+          >
+            <MessageSquarePlus className="w-4 h-4" aria-hidden="true" />
+            <span>{isFeedbackFormOpen ? 'Close Form' : 'Write Customer Feedback'}</span>
+          </button>
+        </div>
+
+        {isFeedbackFormOpen && (
+          <form
+            onSubmit={handleQuickFeedbackSubmit}
+            className="pt-5 border-t border-stone-200 grid grid-cols-1 md:grid-cols-12 gap-4"
+          >
+            <div className="md:col-span-5">
+              <label htmlFor="quick-biz" className="block text-xs font-semibold text-charcoal mb-1.5">
+                Select Business
+              </label>
+              <select
+                id="quick-biz"
+                value={quickBizId || businesses[0]?.id || ''}
+                onChange={(e) => setQuickBizId(e.target.value)}
+                className="w-full px-3.5 py-2 rounded-lg border border-stone-300 bg-white text-sm text-charcoal focus:outline-none focus:ring-2 focus:ring-mango focus:border-transparent"
+              >
+                {businesses.map((biz) => (
+                  <option key={biz.id} value={biz.id}>
+                    {biz.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="md:col-span-4">
+              <label htmlFor="quick-author" className="block text-xs font-semibold text-charcoal mb-1.5">
+                Your Name
+              </label>
+              <input
+                id="quick-author"
+                type="text"
+                required
+                maxLength={60}
+                value={quickAuthor}
+                onChange={(e) => setQuickAuthor(e.target.value)}
+                placeholder="e.g., Sipho M."
+                className="w-full px-3.5 py-2 rounded-lg border border-stone-300 text-sm text-charcoal focus:outline-none focus:ring-2 focus:ring-mango focus:border-transparent"
+              />
+            </div>
+
+            <div className="md:col-span-3">
+              <label htmlFor="quick-rating" className="block text-xs font-semibold text-charcoal mb-1.5">
+                Rating
+              </label>
+              <select
+                id="quick-rating"
+                value={quickRating}
+                onChange={(e) => setQuickRating(Number(e.target.value))}
+                className="w-full px-3.5 py-2 rounded-lg border border-stone-300 bg-white text-sm text-charcoal focus:outline-none focus:ring-2 focus:ring-mango focus:border-transparent"
+              >
+                <option value={5}>5 Stars — Amazing</option>
+                <option value={4}>4 Stars — Really Good</option>
+                <option value={3}>3 Stars — Okay</option>
+                <option value={2}>2 Stars — Needs Work</option>
+                <option value={1}>1 Star — Poor</option>
+              </select>
+            </div>
+
+            <div className="md:col-span-12">
+              <label htmlFor="quick-comment" className="block text-xs font-semibold text-charcoal mb-1.5">
+                Your Feedback
+              </label>
+              <textarea
+                id="quick-comment"
+                required
+                rows={2}
+                maxLength={1000}
+                value={quickComment}
+                onChange={(e) => setQuickComment(e.target.value)}
+                placeholder="Share what you loved or what the business can improve..."
+                className="w-full px-3.5 py-2 rounded-lg border border-stone-300 text-sm text-charcoal focus:outline-none focus:ring-2 focus:ring-mango focus:border-transparent"
+              />
+            </div>
+
+            <div className="md:col-span-12 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsFeedbackFormOpen(false)}
+                className="px-4 py-2 rounded-lg border border-stone-300 bg-white text-xs sm:text-sm font-semibold text-stone-700 hover:bg-stone-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-5 py-2 rounded-lg bg-mango hover:bg-orange-600 text-white text-xs sm:text-sm font-semibold transition-colors cursor-pointer"
+              >
+                Send Feedback to Staff Portal
+              </button>
+            </div>
+          </form>
+        )}
+
+        {mySubmittedFeedback.length === 0 ? (
+          <div className="pt-4 border-t border-stone-100 text-sm text-stone-500">
+            You haven&apos;t sent feedback from this browser yet. Click <strong className="text-charcoal">Write Customer Feedback</strong> above (or open any business below) to test sending feedback and receiving an owner reply.
+          </div>
+        ) : (
+          <div className="pt-4 border-t border-stone-200 divide-y divide-stone-200">
+            {mySubmittedFeedback.map(({ businessId, businessName, review }) => (
+              <div key={review.id} className="py-4 first:pt-0 last:pb-0 space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                    <button
+                      type="button"
+                      onClick={() => onOpenBusiness(businessId, 'reviews')}
+                      className="font-display font-bold text-charcoal hover:text-mango hover:underline underline-offset-2 cursor-pointer"
+                    >
+                      {businessName}
+                    </button>
+                    <span aria-hidden="true" className="text-stone-300">
+                      ·
+                    </span>
+                    <StarRating rating={review.rating} size="sm" />
+                    <span aria-hidden="true" className="text-stone-300">
+                      ·
+                    </span>
+                    <span className="text-xs text-stone-500">
+                      Sent as {review.author} ({review.date})
+                    </span>
+                  </div>
+
+                  <span
+                    className={`text-xs font-semibold ${
+                      review.ownerReply ? 'text-limefresh' : 'text-stone-500'
+                    }`}
+                  >
+                    {review.ownerReply ? 'Owner Replied' : 'Sent to Staff Portal · Awaiting Reply'}
+                  </span>
+                </div>
+
+                <p className="text-sm text-stone-700 leading-relaxed">{review.comment}</p>
+
+                {review.ownerReply && (
+                  <div className="pt-2.5 border-t border-stone-100 space-y-1">
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold text-limefresh">
+                      <CornerDownRight className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                      <span>{review.ownerReply.authorRole} Replied</span>
+                      <span aria-hidden="true" className="text-stone-300">
+                        ·
+                      </span>
+                      <span className="text-charcoal">{review.ownerReply.authorName}</span>
+                      <span aria-hidden="true" className="text-stone-300">
+                        ·
+                      </span>
+                      <span className="text-stone-400 font-normal tabular-nums">
+                        {review.ownerReply.date}
+                      </span>
+                    </div>
+                    <p className="text-sm text-charcoal leading-relaxed pl-5">
+                      {review.ownerReply.message}
+                    </p>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
       {/* Customer Service Feedback Insights Board */}
       {featuredBusiness && (
         <section id="insights-section" className="scroll-mt-24 space-y-4">
@@ -243,6 +481,7 @@ export function HomeView({
             {filteredBusinesses.map((biz) => {
               const avg = getAverageRating(biz);
               const reviewCount = biz.reviews?.length || 0;
+              const replyCount = (biz.reviews || []).filter((r) => Boolean(r.ownerReply)).length;
               const specialsCount = biz.specials?.length || 0;
               const jobsCount = biz.jobs?.length || 0;
               const insightData = analysisCache[biz.id]?.data;
@@ -329,7 +568,8 @@ export function HomeView({
                         {avg > 0 ? avg.toFixed(1) : 'New'}
                       </span>
                       <span className="text-xs text-stone-500 tabular-nums">
-                        ({reviewCount} {reviewCount === 1 ? 'review' : 'reviews'})
+                        ({reviewCount} {reviewCount === 1 ? 'review' : 'reviews'}
+                        {replyCount > 0 ? ` · ${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}` : ''})
                       </span>
                     </div>
                     <span className="inline-flex items-center gap-1 text-xs font-semibold text-mango">
